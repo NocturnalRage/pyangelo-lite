@@ -1,0 +1,29 @@
+{
+  "private": true,
+  "scripts": {
+    "dev": "mix",
+    "development": "mix",
+    "watch": "mix watch",
+    "watch-poll": "mix watch -- --watch-options-poll=1000",
+    "hot": "mix watch --hot",
+    "preprod": "npm run skulpt",
+    "prod": "mix --production",
+    "preproduction": "npm run skulpt",
+    "production": "mix --production",
+    "skulpt": "npm --prefix node_modules/skulpt install --legacy-peer-deps && npm --prefix node_modules/skulpt run build",
+    "refreshskulpt": "npm uninstall skulpt && npm install pingskills/skulpt#pyangelo --save-dev"
+  },
+  "devDependencies": {
+    "eslint": "^8.5.0",
+    "eslint-plugin-vue": "^8.2.0",
+    "eslint-webpack-plugin": "^3.1.1",
+    "laravel-mix": "^6.0.39",
+    "laravel-mix-eslint": "^0.2.0",
+    "resolve-url-loader": "^4.0.0",
+    "sass": "^1.45.0",
+    "sass-loader": "^12.4.0",
+    "skulpt": "github:pingskills/skulpt#pyangelo",
+    "split-grid": "^1.0.11",
+    "toastify-js": "^1.11.2"
+  }
+}
