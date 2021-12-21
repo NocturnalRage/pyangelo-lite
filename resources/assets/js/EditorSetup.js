@@ -1,17 +1,15 @@
 import { notify } from './pyangelo-notify'
+import { saveAs } from 'file-saver'
 import ace from 'ace'
 import { staticWordCompleter } from './editorWordCompletion'
 
 export class Editor {
-  constructor (sketchId, crsfToken, Sk, fileTabs, isReadOnly) {
-    this.sketchId = sketchId
-    this.crsfToken = crsfToken
+  constructor (Sk, filename) {
     this.Sk = Sk
-    this.fileTabs = fileTabs
-    this.isReadOnly = isReadOnly
+    this.isReadOnly = false
 
     this.currentSession = 0
-    this.currentFilename = 'main.py'
+    this.currentFilename = filename
     this.lastSaved = Date.now()
     this.saveEveryXMillis = 10000
     ace.config.set('basePath', 'https://cdnjs.cloudflare.com/ajax/libs/ace/1.4.12/')
@@ -82,7 +80,7 @@ export class Editor {
       if (autosaveOn) {
         const currentTime = Date.now()
         if (currentTime - closureEditor.lastSaved > closureEditor.saveEveryXMillis) {
-          closureEditor.saveCurrentFile()
+          closureEditor.saveToLocalStorage()
           closureEditor.lastSaved = currentTime
         }
       }
@@ -142,199 +140,66 @@ export class Editor {
     return this.editSessions[session].getValue()
   }
 
-  saveCurrentFile () {
-    this.saveCode(this.currentFilename)
+  saveToLocalStorage () {
+    const code = this.getCode(this.currentSession)
+
+    try {
+      localStorage.setItem(this.currentFilename, code)
+    } catch (e) {
+      notify('Unable to save to local storage')
+    }
   }
 
-  saveCode (filename) {
-    if (filename.endsWith('.py')) {
+  loadCodeFromLocalStorage () {
+    try {
+      const src = localStorage.getItem(this.currentFilename)
+      if (!(src === null || src === '')) {
+        this.replaceSession(this.currentSession, src)
+      }
+    } catch (e) {
+      notify('Unable to load from local storage')
+    }
+  }
+
+  loadFromProject () {
+    fetch('/pyangelo/projects/' + this.currentFilename)
+      .then(response => {
+        if (response.ok) {
+          return response.text()
+        } else {
+          return Promise.reject(Error('Project not found'))
+        }
+      })
+      .then(code => {
+        this.replaceSession(this.currentSession, code)
+        this.saveToLocalStorage()
+      })
+      .catch(error => {
+        notify('We could not load the project.', 'error')
+        console.error(error)
+      })
+  }
+
+  copyCode () {
+    try {
       const code = this.getCode(this.currentSession)
-      if (filename !== 'main.py') {
-        this.Sk.builtinFiles.files['./' + filename] = code
-      }
-      const data = 'filename=' + encodeURIComponent(filename) + '&program=' + encodeURIComponent(code) + '&crsfToken=' + encodeURIComponent(this.crsfToken)
-      const options = {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded'
-        },
-        body: data
-      }
-      fetch('/sketch/' + this.sketchId + '/save', options)
-        .then(response => response.json())
-        .then(data => {
-          if (data.status !== 'success') {
-            throw new Error(data.message)
-          }
-        })
-        .catch(error => {
-          notify('We could not save your sketch! Please refresh the page and try again.', 'error')
-          console.error(error)
-        })
+      navigator.clipboard.writeText(code)
+
+      copyToClipboard(code, 'Code copied to clipboard.', 'Unable to copy code to clipboard. Please copy the code manually.')
+    } catch (e) {
+      notify('Unable to copy code to clipboard. Please copy the code manually.')
     }
   }
 
-  loadCode () {
-    fetch('/sketch/code/' + this.sketchId)
-      .then(response => response.json())
-      .then(data => {
-        if (data.status !== 'success') {
-          throw new Error(data.message)
-        }
-        this.setupEditor(data)
-      })
-      .catch(error => { console.error(error) })
-  }
-
-  setupEditor (data) {
-    for (let i = 0; i < data.files.length; i++) {
-      this.addTab(data.files[i])
-    }
-    this.setSession(this.currentSession)
-  }
-
-  addTab (file) {
-    const closureEditor = this
-    const span = document.createElement('span')
-    span.dataset.filename = file.filename
-    const text = document.createTextNode(file.filename)
-    span.appendChild(text)
-    if (file.filename !== 'main.py' && !this.isReadOnly) {
-      const deleteButton = document.createElement('span')
-      deleteButton.innerHTML = '&times;'
-      deleteButton.onclick = function (ev) {
-        ev.stopPropagation()
-        if (confirm('Are you sure you want to delete ' + file.filename + '? This operation cannot be undone!')) {
-          if (closureEditor.currentFilename === file.filename) {
-            closureEditor.currentSession = 0
-            closureEditor.setSession(closureEditor.currentSession)
-            document.querySelector(".editorTab[data-filename='main.py']").click()
-          }
-          closureEditor.deleteFile(file.filename)
-          delete closureEditor.Sk.builtinFiles.files['./' + file.filename]
-        }
-      }
-      deleteButton.classList.add('smallButton')
-      span.appendChild(deleteButton)
-    }
-    span.classList.add('editorTab')
-    if (file.filename === 'main.py') {
-      span.classList.add('current')
-    }
-
-    if (file.filename.endsWith('.py')) {
-      if (!file.sourceCode) {
-        file.sourceCode = ''
-      }
-      if (file.filename !== 'main.py') {
-        this.Sk.builtinFiles.files['./' + file.filename] = file.sourceCode
-      }
-      const sessionIndex = this.addSession(file.sourceCode)
-      span.setAttribute('data-editor-session', sessionIndex)
-      span.setAttribute('data-filename', file.filename)
-      span.onclick = function (ev) {
-        const editor = document.getElementById('editor')
-        const editorImagePreview = document.getElementById('editorImagePreview')
-        const editorAudioPreview = document.getElementById('editorAudioPreview')
-        editorImagePreview.style.display = 'none'
-        editorAudioPreview.style.display = 'none'
-        editor.style.display = 'block'
-        if (!closureEditor.isReadOnly) {
-          closureEditor.saveCode(closureEditor.currentFilename)
-        }
-        closureEditor.currentFilename = ev.target.getAttribute('data-filename')
-        closureEditor.currentSession = ev.target.getAttribute('data-editor-session')
-        closureEditor.setSession(closureEditor.currentSession)
-        document.querySelector('.editorTab.current').classList.remove('current')
-        ev.target.classList.add('current')
-      }
-    } else if (file.filename.toLowerCase().endsWith('.png') ||
-             file.filename.toLowerCase().endsWith('.jpg') ||
-             file.filename.toLowerCase().endsWith('.jpeg') ||
-             file.filename.toLowerCase().endsWith('.gif')) {
-      span.onclick = function (ev) {
-        const editor = document.getElementById('editor')
-        const editorImagePreview = document.getElementById('editorImagePreview')
-        const editorAudioPreview = document.getElementById('editorAudioPreview')
-        editor.style.display = 'none'
-        editorAudioPreview.style.display = 'none'
-        editorImagePreview.style.display = 'block'
-        document.getElementById('editorImagePreview').innerHTML = '<img src="' + ev.target.getAttribute('data-filename') + '" />'
-        document.querySelector('.editorTab.current').classList.remove('current')
-        ev.target.classList.add('current')
-        closureEditor.currentFilename = ev.target.getAttribute('data-filename')
-      }
-    } else if (file.filename.toLowerCase().endsWith('.mp3') ||
-             file.filename.toLowerCase().endsWith('.wav')) {
-      span.onclick = function (ev) {
-        const editor = document.getElementById('editor')
-        const editorImagePreview = document.getElementById('editorImagePreview')
-        const editorAudioPreview = document.getElementById('editorAudioPreview')
-        editor.style.display = 'none'
-        editorImagePreview.style.display = 'none'
-        editorAudioPreview.style.display = 'block'
-        document.getElementById('editorAudioPreview').innerHTML = '<figure><figcaption>' + ev.target.getAttribute('data-filename') + '</figcaption><audio controls preload="none" src="' + ev.target.getAttribute('data-filename') + '">Your browser does not support the <code>audio</code> element.</audio></figure>'
-        document.querySelector('.editorTab.current').classList.remove('current')
-        ev.target.classList.add('current')
-        closureEditor.currentFilename = ev.target.getAttribute('data-filename')
-      }
-    }
-    this.fileTabs.appendChild(span)
-  }
-
-  addNewFile (filename) {
-    const data = 'filename=' + encodeURIComponent(filename) + '&crsfToken=' + encodeURIComponent(this.crsfToken)
-    const options = {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded'
-      },
-      body: data
-    }
-    fetch('/sketch/' + this.sketchId + '/addFile', options)
-      .then(response => response.json())
-      .then(data => {
-        if (data.status !== 'success') {
-          throw new Error(data.message)
-        }
-        const file = { filename: data.filename, sourceCode: '' }
-        this.addTab(file)
-        this.currentFilename = file.filename
-        this.currentSession = this.editSessions.length - 1
-        this.setSession(this.currentSession)
-        document.querySelector('.editorTab.current').classList.remove('current')
-        document.querySelector(`.editorTab[data-filename='${file.filename}']`).classList.add('current')
-      })
-      .catch(error => { console.error(error) })
-  }
-
-  deleteFile (filename) {
-    const data = 'filename=' + encodeURIComponent(filename) + '&sketchId=' + encodeURIComponent(this.sketchId) + '&crsfToken=' + encodeURIComponent(this.crsfToken)
-    const options = {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded'
-      },
-      body: data
-    }
-    fetch('/sketch/' + this.sketchId + '/deleteFile', options)
-      .then(response => response.json())
-      .then(data => {
-        if (data.status !== 'success') {
-          throw new Error(data.message)
-        }
-        this.removeTab(data)
-      })
-      .catch(error => { console.error(error) })
-  }
-
-  removeTab (data) {
-    const span = document.querySelector(`.editorTab[data-filename='${data.filename}']`)
-    if (!span) {
-      alert('An unknown error occured; please try again or contact us.')
+  saveCodeToFile () {
+    const filename = window.prompt('Enter file name:', this.currentFilename)
+    if (filename == null) {
       return
     }
-    span.remove()
+    const code = this.getCode(this.currentSession)
+    const file = new File([code], filename, { type: 'text/plain;charset=utf-8' })
+    saveAs(file)
+    this.saveToLocalStorage()
   }
 
   setReadOnly (readOnly) {
@@ -347,5 +212,38 @@ export class Editor {
 
   resize () {
     this.editor.resize()
+  }
+}
+
+function copyToClipboard (text, successMsg, errorMsg) {
+  const browser = detectBrowser()
+  if (browser === 'Firefox') {
+    navigator.clipboard.writeText(text)
+    notify(successMsg)
+  } else {
+    navigator.permissions.query({ name: 'clipboard-write' }).then(result => {
+      if (result.state === 'granted' || result.state === 'prompt') {
+        navigator.clipboard.writeText(text)
+        notify(successMsg)
+      } else {
+        notify(errorMsg)
+      }
+    })
+  }
+}
+
+function detectBrowser () {
+  if ((navigator.userAgent.indexOf('Opera') || navigator.userAgent.indexOf('OPR')) !== -1) {
+    return 'Opera'
+  } else if (navigator.userAgent.indexOf('Chrome') !== -1) {
+    return 'Chrome'
+  } else if (navigator.userAgent.indexOf('Safari') !== -1) {
+    return 'Safari'
+  } else if (navigator.userAgent.indexOf('Firefox') !== -1) {
+    return 'Firefox'
+  } else if ((navigator.userAgent.indexOf('MSIE') !== -1) || (!!document.documentMode === true)) {
+    return 'IE'
+  } else {
+    return 'Unknown'
   }
 }
