@@ -1,3 +1,6 @@
 /node_modules
 /vendor
-/public
+/public/pyangelo/css
+/public/pyangelo/fonts
+/public/pyangelo/js
+/public/pyangelo/mix-manifest.json

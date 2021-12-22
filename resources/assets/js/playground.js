@@ -32,7 +32,11 @@ loadFileInput.addEventListener('change', userLoadCode, false)
 const openButton = document.getElementById('openButton')
 openButton.addEventListener('click', loadCodeFromFile)
 const resetButton = document.getElementById('resetButton')
-resetButton.addEventListener('click', resetProject)
+if (hasProject) {
+  resetButton.addEventListener('click', resetProject)
+} else {
+  resetButton.style.display = 'none'
+}
 const fullscreenButton = document.getElementById('fullscreenButton')
 fullscreenButton.addEventListener('click', openFullscreen)
 const stepIntoButton = document.getElementById('stepInto')
